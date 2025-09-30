@@ -265,15 +265,3 @@ OSError: [Errno 98] Address already in use
 pkill -f "python3 -m http.server"
 ./start_server.sh 8081
 ```
-
-## 🤝 기여하기
-
-버그 리포트, 기능 요청, 풀 리퀘스트를 환영합니다!
-
-## 📝 라이선스
-
-이 프로젝트는 MIT 라이선스 하에 배포됩니다.
-
----
-
-**Made with ❤️ for BehaviorTree Analysis**
