@@ -33,10 +33,19 @@ class EnhancedBranchBTAnalyzer:
     def _find_tree_with_changes(self, source_trees: Dict, target_trees: Dict, git_changes: List[Dict]) -> str:
         """Find the tree that actually contains the detected changes"""
         
-        # Targeted fixes for specific cases
+        # Check for specific node combinations to determine the correct tree
+        has_manipulator_reboot = any('ManipulatorRebootDxlAction' in str(change) for change in git_changes)
+        has_publish_log = any('PublishLogAction' in str(change) and '매니퓰레이터 Reboot' in str(change) for change in git_changes)
+        
+        # If we have ManipulatorRebootDxlAction or PublishLogAction with "매니퓰레이터 Reboot", prefer MainTree
+        if (has_manipulator_reboot or has_publish_log) and 'MainTree' in target_trees:
+            print(f"🔍 Using MainTree (found ManipulatorRebootDxlAction or PublishLogAction with 매니퓰레이터 Reboot)")
+            return 'MainTree'
+        
+        # Targeted fixes for specific cases - lower priority
         if 'MoveToNextSector' in target_trees:
             for change in git_changes:
-                if 'WaitAction' in str(change):
+                if 'WaitAction' in str(change) and not has_manipulator_reboot and not has_publish_log:
                     print(f"🔍 Using MoveToNextSector tree (targeted fix for WaitAction)")
                     return 'MoveToNextSector'
         

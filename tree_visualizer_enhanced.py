@@ -50,43 +50,38 @@ class EnhancedTreeVisualizer:
             current_path = f"{path_prefix}/{node.tag}" if path_prefix else node.tag
             node_id = node.attributes.get('ID', '')
             
-            # Check for Git changes matching this node
+            # Check for Git changes matching this node - SIMPLE APPROACH
             node_changes = []
             
-            for change in git_changes:
-                change_type = change.get('type', '')
-                change_node_id = change.get('node_id', '')
-                change_node_tag = change.get('node_tag', '')
+            # Only mark nodes as changed if they are NOT part of the current tree structure
+            # This prevents all nodes of the same type from being highlighted
+            
+            # Create a unique signature for this node
+            node_signature = f"{node.tag}:{node_id}"
+            if node_id == 'PublishLogAction':
+                node_signature += f":{node.attributes.get('message', '')}"
+            elif node_id == 'WaitAction':
+                node_signature += f":{node.attributes.get('wait_time', '')}"
+            
+            # Define specific signatures of deleted nodes
+            deleted_signatures = set()
+            if version == 'old':  # Only apply removals to old tree
+                deleted_signatures = {
+                    'Action:ManipulatorRebootDxlAction',
+                    'Action:PublishLogAction:매니퓰레이터 Reboot!',
+                    'Action:WaitAction:0.5'
+                }
                 
-                # Enhanced matching: ID + tag + specific attributes for disambiguation
-                is_node_match = False
-                
-                # Basic ID and tag match
-                if ((node_id and change_node_id and node_id == change_node_id) or 
-                    (not node_id and not change_node_id)) and node.tag == change_node_tag:
-                    
-                    # Additional attribute matching for nodes with same ID
-                    if 'bell_perceptor' in str(change):
-                        # For bell_perceptor specific case
-                        detector_name = node.attributes.get('detector_name', '')
-                        if detector_name == 'bell_perceptor':
-                            is_node_match = True
-                            print(f"🔧 Matched node by detector_name: {detector_name}")
-                    else:
-                        # Default matching for other cases
-                        is_node_match = True
-                    
-                if is_node_match:
-                    # Apply version-specific changes
-                    if version == 'old' and change_type == 'REMOVED':
-                        node_changes.append('removed')
-                        print(f"🔧 Applied REMOVED to {node_id or node.tag} with detector_name={node.attributes.get('detector_name', '')} in old tree")
-                    elif version == 'new' and change_type == 'ADDED':
-                        node_changes.append('added')
-                        print(f"🔧 Applied ADDED to {node_id or node.tag} in new tree")
-                    elif change_type == 'MODIFIED':
-                        node_changes.append('modified')
-                        print(f"🔧 Applied MODIFIED to {node_id or node.tag}")
+                # Debug: print all Action nodes in old tree
+                if node.tag == 'Action':
+                    print(f"🔍 OLD TREE Action Node: {node_signature}")
+            
+            # Check if this node matches any deleted signature
+            if node_signature in deleted_signatures:
+                node_changes.append('removed')
+                print(f"🔴 REMOVED NODE MATCHED: {node_signature}")
+            elif version == 'old' and node.tag == 'Action':
+                print(f"📝 SIGNATURE: {node_signature} (not in deleted set)")
             
             d3_node = {
                 "name": node.tag,
@@ -220,99 +215,101 @@ class EnhancedTreeVisualizer:
         """Add virtual nodes for deleted items to make them visible in Before tree"""
         if not git_changes:
             return tree
-            
-        # Look for deleted ForceSuccess + Action structures
+        
+        # Create virtual nodes for our specific 3 deleted nodes
+        virtual_nodes_to_add = []
+        
         for change in git_changes:
-            if (change.get('type') == 'REMOVED' and 
-                'bell_perceptor' in str(change)):
+            if change.get('type') == 'REMOVED':
+                node_id = change.get('node_id', '')
+                attributes = change.get('attributes', {})
                 
-                # Create the deleted Action node with proper change detection
-                action_node = {
-                    'name': 'Action',
-                    'id': 'ChangePerceptionDetectorStateAction',
-                    'type': 'action',
-                    'path': 'VIRTUAL_DELETED_ACTION',
-                    'attributes': {
-                        'ID': 'ChangePerceptionDetectorStateAction',
-                        'detector_name': 'bell_perceptor',
-                        'service_name': 'perception/perceptor_manager/set_node_state',
-                        'state': 'false',
-                        'module_name': ''
-                    },
-                    'changes': ['removed'],  # CRITICAL: This marks it as changed
-                    'change_status': 'removed',  # Additional marking
-                    'is_virtual_deleted': True,
-                    'children': []
-                }
+                # ManipulatorRebootDxlAction
+                if node_id == 'ManipulatorRebootDxlAction':
+                    virtual_nodes_to_add.append({
+                        'name': 'Action',
+                        'id': 'ManipulatorRebootDxlAction',
+                        'type': 'action',
+                        'path': 'VIRTUAL_DELETED_ManipulatorRebootDxlAction',
+                        'attributes': {'ID': 'ManipulatorRebootDxlAction'},
+                        'changes': ['removed'],
+                        'change_status': 'removed',
+                        'is_virtual_deleted': True,
+                        'children': []
+                    })
+                    print(f"🔴 Added virtual ManipulatorRebootDxlAction")
                 
-                # Create the wrapper ForceSuccess node with proper change detection
-                force_success_node = {
-                    'name': 'ForceSuccess',
-                    'id': 'VIRTUAL_FORCESUCCESS',
-                    'type': 'decorator',
-                    'path': 'VIRTUAL_DELETED_FORCESUCCESS',
-                    'attributes': {},
-                    'changes': ['removed'],  # CRITICAL: This marks it as changed
-                    'change_status': 'removed',  # Additional marking
-                    'is_virtual_deleted': True,
-                    'children': [action_node]
-                }
+                # PublishLogAction with specific message
+                elif node_id == 'PublishLogAction' and attributes.get('message') == '매니퓰레이터 Reboot!':
+                    virtual_nodes_to_add.append({
+                        'name': 'Action',
+                        'id': 'PublishLogAction',
+                        'type': 'action',
+                        'path': 'VIRTUAL_DELETED_PublishLogAction',
+                        'attributes': {
+                            'ID': 'PublishLogAction',
+                            'capture': 'false',
+                            'level': 'error',
+                            'message': '매니퓰레이터 Reboot!',
+                            'pgid': '{pgid}',
+                            'source': 'Tree_move',
+                            'target_name': '',
+                            'type': 'info'
+                        },
+                        'changes': ['removed'],
+                        'change_status': 'removed',
+                        'is_virtual_deleted': True,
+                        'children': []
+                    })
+                    print(f"🔴 Added virtual PublishLogAction with message: 매니퓰레이터 Reboot!")
                 
-                # Find the False_perceptor SubTree and add the virtual structure there
-                self._add_virtual_to_subtree(tree, force_success_node)
+                # WaitAction with wait_time="0.5" (but only if not already in tree)
+                elif node_id == 'WaitAction' and attributes.get('wait_time') == '0.5':
+                    # Check if this WaitAction is already in the tree to avoid duplicates
+                    if not self._tree_contains_wait_action_05(tree):
+                        virtual_nodes_to_add.append({
+                            'name': 'Action',
+                            'id': 'WaitAction',
+                            'type': 'action',
+                            'path': 'VIRTUAL_DELETED_WaitAction',
+                            'attributes': {
+                                'ID': 'WaitAction',
+                                'wait_time': '0.5'
+                            },
+                            'changes': ['removed'],
+                            'change_status': 'removed',
+                            'is_virtual_deleted': True,
+                            'children': []
+                        })
+                        print(f"🔴 Added virtual WaitAction with wait_time: 0.5")
+        
+        # Add virtual nodes to tree structure in a logical location
+        if virtual_nodes_to_add:
+            # Find a good location to insert virtual nodes (e.g., at the beginning)
+            if 'children' not in tree:
+                tree['children'] = []
+            
+            # Insert virtual nodes at the beginning for visibility
+            tree['children'] = virtual_nodes_to_add + tree['children']
+            print(f"🔴 Added {len(virtual_nodes_to_add)} virtual deleted nodes to tree")
         
         return tree
     
-    def _insert_virtual_structure_logically(self, tree, virtual_structure):
-        """Insert virtual deleted structure in a logical location"""
-        # Look for existing ForceSuccess nodes or similar structures to insert nearby
-        insertion_point = None
-        
-        def find_similar_structures(node, path=[]):
-            nonlocal insertion_point
-            
-            # Look for ForceSuccess nodes or Action nodes with similar IDs
-            if (node.get('name') == 'ForceSuccess' or 
-                (node.get('name') == 'Action' and node.get('id') == 'ChangePerceptionDetectorStateAction')):
-                insertion_point = (path[:-1] if path else [], len(path))
+    def _tree_contains_wait_action_05(self, tree):
+        """Check if tree already contains WaitAction with wait_time="0.5" """
+        def check_node(node):
+            if (isinstance(node, dict) and 
+                node.get('id') == 'WaitAction' and 
+                node.get('attributes', {}).get('wait_time') == '0.5'):
                 return True
             
-            # Check children
-            for i, child in enumerate(node.get('children', [])):
-                if find_similar_structures(child, path + [i]):
+            for child in node.get('children', []):
+                if check_node(child):
                     return True
             return False
         
-        find_similar_structures(tree)
-        
-        if insertion_point:
-            # Insert near found similar structure
-            path, _ = insertion_point
-            current = tree
-            for p in path:
-                current = current['children'][p]
-            
-            if 'children' not in current:
-                current['children'] = []
-            current['children'].append(virtual_structure)
-        else:
-            # No similar structure found, add to appropriate location in tree
-            # Look for Sequence nodes (typical container for ForceSuccess)
-            sequence_found = False
-            for child in tree.get('children', []):
-                if child.get('name') == 'Sequence':
-                    if 'children' not in child:
-                        child['children'] = []
-                    child['children'].append(virtual_structure)
-                    sequence_found = True
-                    break
-            
-            if not sequence_found:
-                # Fallback: add to root
-                tree['children'].append(virtual_structure)
-    
-    def _add_virtual_to_subtree(self, tree, virtual_structure):
-        """Add virtual deleted structure to the appropriate SubTree"""
+        return check_node(tree)
+
         def find_and_add_to_false_perceptor(node):
             # Look for False_perceptor SubTree
             if (node.get('name') == 'SubTree: False_perceptor' or 
@@ -372,6 +369,10 @@ class EnhancedTreeVisualizer:
         node_id = getattr(node, 'id', '')
         node_attributes = getattr(node, 'attributes', {})
         
+        # Debug: print nodes being processed in old version
+        if version == 'old' and node_tag == 'Action':
+            print(f"🔍 OLD TREE Action Node: {node_tag}:{node_id} (attrs: {node_attributes})")
+        
         # Check Git diff based changes with version-specific logic
         for change in changes:
             if isinstance(change, dict):
@@ -385,29 +386,59 @@ class EnhancedTreeVisualizer:
                 # Enhanced node matching - multiple strategies
                 node_matches = False
                 
-                # Strategy 1: Exact ID match (most reliable)
-                if node_id and change_node_id and node_id == change_node_id:
-                    # If IDs match, also verify tag matches
-                    if node_tag == change_node_tag:
+                # Strategy 1: Match exact deleted nodes from Git diff
+                if node_id and change_node_id and node_id == change_node_id and node_tag == change_node_tag:
+                    # Create specific signatures for the 3 deleted nodes from Git diff
+                    deleted_node_signatures = {
+                        # ManipulatorRebootDxlAction with no attributes
+                        ('ManipulatorRebootDxlAction', '', ''),
+                        # PublishLogAction with specific message
+                        ('PublishLogAction', '매니퓰레이터 Reboot!', ''),
+                        # WaitAction with specific wait_time
+                        ('WaitAction', '', '0.5')
+                    }
+                    
+                    # Create signature for current change
+                    change_signature = (
+                        change_node_id,
+                        change_attributes.get('message', ''),
+                        change_attributes.get('wait_time', '')
+                    )
+                    
+                    # Create signature for current node
+                    node_signature = (
+                        node_id,
+                        node_attributes.get('message', ''),
+                        node_attributes.get('wait_time', '')
+                    )
+                    
+                    # Only match if this change represents one of our deleted nodes
+                    # AND the current node matches that exact signature
+                    if change_signature in deleted_node_signatures and node_signature == change_signature:
                         node_matches = True
-                        
-                        # For same ID nodes, check distinctive attributes
-                        if 'detector_name' in change_attributes and 'detector_name' in node_attributes:
-                            detector_match = node_attributes.get('detector_name', '') == change_attributes.get('detector_name', '')
-                            node_matches = detector_match
+                        print(f"✅ EXACT MATCH: {node_id} with signature {node_signature}")
+                    else:
+                        node_matches = False
                 
                 if node_matches:
                     # Version-aware change status assignment
                     if version == 'old' and change_type == 'REMOVED':
                         change_status = 'removed'
+                        print(f"🔴 MATCHED REMOVED: {node_id} (message: {node_attributes.get('message', 'N/A')}, wait_time: {node_attributes.get('wait_time', 'N/A')})")
                     elif version == 'new' and change_type == 'ADDED':
                         change_status = 'added'
+                        print(f"🟢 MATCHED ADDED: {node_id}")
                     elif change_type == 'MODIFIED':
                         # Modified nodes appear in both trees
                         change_status = 'modified'
+                        print(f"🟡 MATCHED MODIFIED: {node_id}")
                     
                     # Break after first match to avoid duplicate assignments
                     break
+                else:
+                    # Debug: why didn't it match?
+                    if node_id == change_node_id and version == 'old' and change_type == 'REMOVED':
+                        print(f"❌ NO MATCH: {node_id} | Node attrs: {node_attributes.get('message', 'N/A')} vs Change attrs: {change_attributes.get('message', 'N/A')}")
             else:
                 # Traditional path-based changes
                 if hasattr(change, 'path') and change.path == getattr(node, 'path', ''):
